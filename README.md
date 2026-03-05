@@ -45,16 +45,6 @@ git clone https://github.com/yumazd/voiceinput.git
 cd voiceinput
 ```
 
-APIキーを設定:
-
-```bash
-mkdir -p ~/Library/Application\ Support/VoiceInput
-cat > ~/Library/Application\ Support/VoiceInput/.env << 'EOF'
-OPENAI_API_KEY=your-openai-api-key
-ANTHROPIC_API_KEY=your-anthropic-api-key
-EOF
-```
-
 ビルド&インストール:
 
 ```bash
@@ -68,6 +58,10 @@ open /Applications/VoiceInput.app
 ```
 
 初回起動時にアクセシビリティとマイクの許可を求められます。許可してください。
+
+### APIキーの設定
+
+メニューバーのマイクアイコン →「設定…」からOpenAIとAnthropicのAPIキーを入力してください。
 
 ## 設定
 

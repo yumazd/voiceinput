@@ -95,6 +95,19 @@ def _check_accessibility(prompt: bool = False) -> bool:
     return trusted
 
 
+_WHISPER_PROMPT_HINT = (
+    "Python, JavaScript, TypeScript, React, Next.js, Node.js, API, "
+    "Astro, Astro Islands, Vite, MDX, Starlight, "
+    "GitHub, Docker, Kubernetes, AWS, SQL, PostgreSQL, MongoDB, "
+    "Redis, GraphQL, REST, HTTP, JSON, HTML, CSS, Tailwind, "
+    "Vue, Svelte, Rust, Go, Swift, Terraform, CI/CD, "
+    "npm, yarn, pip, brew, git, commit, push, pull request, "
+    "Issue, issue, branch, merge, deploy, "
+    "コンポーネント、デプロイ、リファクタリング、マイグレーション、"
+    "エンドポイント、ミドルウェア、インスタンス、コンテナ、イシュー"
+)
+
+
 class VoiceInputApp(rumps.App):
     def __init__(self):
         _log("VoiceInputApp.__init__ 開始")
@@ -105,6 +118,7 @@ class VoiceInputApp(rumps.App):
         self.stream = None
         self.prefs_controller = None
         self._hotkey_monitor = None
+        self._whisper_model = None  # faster-whisper モデルキャッシュ
 
         # 設定読み込み
         self.settings = load_settings()
@@ -126,6 +140,11 @@ class VoiceInputApp(rumps.App):
         # グローバルホットキーリスナー開始 (NSEvent)
         _log(f"ホットキー設定: {self.settings.hotkey}")
         self._start_hotkey_listener()
+
+        # ローカルモードならバックグラウンドでモデルをプリロード
+        if self.settings.processing_mode == "local":
+            threading.Thread(target=self._preload_whisper_model, daemon=True).start()
+
         _log("VoiceInputApp.__init__ 完了")
 
     # --- ホットキー処理 (NSEvent ベース) ---
@@ -204,6 +223,10 @@ class VoiceInputApp(rumps.App):
 
         # メニューのホットキー表示を更新
         self._update_menu_title(f"録音開始 ({new_settings.hotkey_label})")
+
+        # ローカルモードに変更されたらモデルをプリロード
+        if new_settings.processing_mode == "local" and self._whisper_model is None:
+            threading.Thread(target=self._preload_whisper_model, daemon=True).start()
 
     # --- 録音制御 ---
 
@@ -287,6 +310,21 @@ class VoiceInputApp(rumps.App):
                 self._update_status("GPT-4o処理中...")
                 _log("GPT-4oモードで処理開始")
                 result = self._process_with_gpt4o(mp3_buffer)
+            elif self.settings.processing_mode == "local":
+                if self._whisper_model is None:
+                    self._update_status("モデル準備中（初回のみ）...")
+                else:
+                    self._update_status("ローカル文字起こし中...")
+                _log("faster-whisperで文字起こし開始")
+                raw_text = self._transcribe_local(mp3_buffer)
+                _log(f"ローカル文字起こし結果: {raw_text[:100] if raw_text else '(空)'}")
+                if not raw_text:
+                    self._show_notification("エラー", "文字起こしに失敗しました")
+                    self._reset_state()
+                    return
+                self._update_status("AI補正中...")
+                _log("Claude補正開始")
+                result = self._correct_text(raw_text)
             else:
                 self._update_status("文字起こし中...")
                 _log("Whisperで文字起こし開始")
@@ -346,16 +384,104 @@ class VoiceInputApp(rumps.App):
             model=self.settings.whisper_model,
             file=mp3_buffer,
             language=self.settings.language,
-            prompt="Python, JavaScript, TypeScript, React, Next.js, Node.js, API, "
-            "Astro, Astro Islands, Vite, MDX, Starlight, "
-            "GitHub, Docker, Kubernetes, AWS, SQL, PostgreSQL, MongoDB, "
-            "Redis, GraphQL, REST, HTTP, JSON, HTML, CSS, Tailwind, "
-            "Vue, Svelte, Rust, Go, Swift, Terraform, CI/CD, "
-            "npm, yarn, pip, brew, git, commit, push, pull request, "
-            "コンポーネント、デプロイ、リファクタリング、マイグレーション、"
-            "エンドポイント、ミドルウェア、インスタンス、コンテナ",
+            prompt=_WHISPER_PROMPT_HINT,
         )
         return response.text.strip()
+
+    def _preload_whisper_model(self):
+        """バックグラウンドでfaster-whisperモデルをロードしておく"""
+        try:
+            _log("faster-whisper プリロード開始")
+            WhisperModel = self._import_whisper_model()
+            if self._whisper_model is None:
+                model_dir = os.path.join(
+                    os.path.expanduser("~"),
+                    "Library", "Application Support", "VoiceInput", "models",
+                )
+                os.makedirs(model_dir, exist_ok=True)
+                self._whisper_model = WhisperModel(
+                    "small",
+                    device="cpu",
+                    compute_type="int8",
+                    download_root=model_dir,
+                )
+            _log("faster-whisper プリロード完了")
+        except Exception as e:
+            _log(f"faster-whisper プリロード失敗: {e}")
+
+    @staticmethod
+    def _import_whisper_model():
+        """faster-whisperのWhisperModelをimportして返す。
+
+        py2appの静的解析を回避するためimportlibを使用。
+        バンドル内にfaster-whisperは同梱しないため、venvのsite-packagesを探索する。
+        """
+        import importlib
+
+        try:
+            mod = importlib.import_module("faster_whisper")
+            return mod.WhisperModel
+        except ImportError:
+            pass
+
+        # py2appバンドル内: venvのsite-packagesをパスに追加して再試行
+        import glob as _glob
+
+        venv_patterns = [
+            os.path.join(os.path.expanduser("~"), "localhost", "VoiceInputApp",
+                         "venv", "lib", "python*", "site-packages"),
+        ]
+        for pattern in venv_patterns:
+            for sp in _glob.glob(pattern):
+                if sp not in sys.path:
+                    sys.path.insert(0, sp)
+
+        try:
+            mod = importlib.import_module("faster_whisper")
+            return mod.WhisperModel
+        except ImportError:
+            raise RuntimeError(
+                "faster-whisper が未インストールです。\n"
+                "pip install faster-whisper を実行してください。"
+            )
+
+    def _transcribe_local(self, mp3_buffer: io.BytesIO) -> str:
+        """faster-whisper (small モデル) でローカル文字起こし"""
+        import tempfile
+
+        WhisperModel = self._import_whisper_model()
+
+        if self._whisper_model is None:
+            model_dir = os.path.join(
+                os.path.expanduser("~"),
+                "Library", "Application Support", "VoiceInput", "models",
+            )
+            os.makedirs(model_dir, exist_ok=True)
+            _log(f"faster-whisper モデルロード開始 (download_root={model_dir})")
+            self._whisper_model = WhisperModel(
+                "small",
+                device="cpu",
+                compute_type="int8",
+                download_root=model_dir,
+            )
+            _log("faster-whisper モデルロード完了")
+
+        # faster-whisper はファイルパスが必要なため tempfile に書き出す
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            tmp.write(mp3_buffer.read())
+            tmp_path = tmp.name
+
+        try:
+            segments, info = self._whisper_model.transcribe(
+                tmp_path,
+                language=self.settings.language,
+                initial_prompt=_WHISPER_PROMPT_HINT,
+            )
+            text = "".join(segment.text for segment in segments)
+        finally:
+            os.unlink(tmp_path)
+
+        return text.strip()
 
     def _correct_text(self, raw_text: str) -> str:
         prompt_template = build_correction_prompt(self.settings)

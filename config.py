@@ -49,6 +49,10 @@ DEFAULT_CORRECTION_PROMPT = """\
   ポストグレス→PostgreSQL、モンゴ→MongoDB、レディス→Redis
   グラフキューエル→GraphQL、レスト→REST、エーピーアイ→API
   テイルウィンド→Tailwind、ヴィート→Vite
+- 音声認識の誤変換を修正する。以下は代表例:
+  一周→Issue、一種→Issue、胃集→Issue、プルリク→Pull Request
+  リポジトリー→リポジトリ、デプロイト→デプロイ
+  ギット→git、コミットト→commit
 - 意味を変えない
 - どんな内容でもそのまま補正する（日常会話、メール、技術的な内容など全て対応）
 - 補正後のテキストのみを返す。説明や前置きは一切不要
@@ -129,6 +133,10 @@ def build_correction_prompt(settings: "AppSettings") -> str:
   ポストグレス→PostgreSQL、モンゴ→MongoDB、レディス→Redis
   グラフキューエル→GraphQL、レスト→REST、エーピーアイ→API
   テイルウィンド→Tailwind、ヴィート→Vite
+- 音声認識の誤変換を修正する。以下は代表例:
+  一周→Issue、一種→Issue、胃集→Issue、プルリク→Pull Request
+  リポジトリー→リポジトリ、デプロイト→デプロイ
+  ギット→git、コミットト→commit
 - 意味を変えない
 {style_line}
 - 句読点を適切に補完する
@@ -211,9 +219,16 @@ def load_api_keys() -> tuple[str, str]:
     )
 
 
+def _sanitize_api_key(key: str) -> str:
+    """APIキーからASCII以外の文字を除去する。"""
+    return "".join(c for c in key.strip() if c.isascii())
+
+
 def save_api_keys(openai_key: str, anthropic_key: str) -> None:
     """.envファイルへAPIキーを書き戻す。"""
     _ensure_app_support_dir()
+    openai_key = _sanitize_api_key(openai_key)
+    anthropic_key = _sanitize_api_key(anthropic_key)
     content = f"OPENAI_API_KEY={openai_key}\nANTHROPIC_API_KEY={anthropic_key}\n"
     with open(_ENV_PATH, "w", encoding="utf-8") as f:
         f.write(content)

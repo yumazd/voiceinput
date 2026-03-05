@@ -28,6 +28,7 @@ PADDING = 10
 
 PROCESSING_MODE_OPTIONS = [
     ("standard", "標準（Whisper + Claude）"),
+    ("local", "ローカル文字起こし（faster-whisper + Claude）"),
     ("fast", "高速（GPT-4o）"),
 ]
 

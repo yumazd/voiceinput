@@ -98,7 +98,6 @@ def _check_accessibility(prompt: bool = False) -> bool:
 class VoiceInputApp(rumps.App):
     def __init__(self):
         _log("VoiceInputApp.__init__ 開始")
-        # 初回起動時のみアクセシビリティ許可ダイアログを表示
         _check_accessibility(prompt=True)
         super().__init__("🎙️", quit_button="終了")
         self.recording = False

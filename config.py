@@ -91,14 +91,16 @@ class AppSettings:
 WRITING_STYLE_OPTIONS = [
     ("none", "そのまま"),
     ("desu_masu", "ですます調にする"),
-    ("casual", "話し言葉にする"),
+    ("casual", "敬語を使わず、くだけた話し言葉にする"),
+    ("super_casual", "カジュアル口調にする"),
     ("polish", "文体を全体的に整える"),
 ]
 
 _STYLE_INSTRUCTIONS = {
     "none": "- 文体は変更しない。話し言葉はそのまま維持する",
     "desu_masu": "- 文末をですます調に統一する",
-    "casual": "- 自然な話し言葉の文体にする",
+    "casual": "- 敬語を使わず、くだけた話し言葉にする",
+    "super_casual": "- 友達に話すようなカジュアルな口語体にする。「〜だよ」「〜じゃん」「〜だよね」のような表現を使う",
     "polish": "- 文体を全体的に整え、読みやすい書き言葉にする",
 }
 
@@ -157,11 +159,11 @@ def load_settings() -> AppSettings:
         value = defaults.objectForKey_(key)
         if value is None:
             continue
-        if f.type == "bool":
+        if f.type is bool:
             setattr(settings, f.name, bool(value))
-        elif f.type == "int":
+        elif f.type is int:
             setattr(settings, f.name, int(value))
-        elif f.type == "str":
+        elif f.type is str:
             setattr(settings, f.name, str(value))
 
     return settings

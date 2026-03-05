@@ -335,8 +335,39 @@ class PreferencesWindowController(NSObject):
 
         return settings, openai_key, anthropic_key
 
+    def _ensure_edit_menu(self):
+        """LSUIElementアプリにEditメニューを追加（Cmd+V等を有効化）"""
+        mainMenu = AppKit.NSApp.mainMenu()
+        if mainMenu is None:
+            mainMenu = AppKit.NSMenu.alloc().init()
+            AppKit.NSApp.setMainMenu_(mainMenu)
+
+        # 既にEditメニューがあればスキップ
+        if mainMenu.itemWithTitle_("Edit") is not None:
+            return
+
+        editMenu = AppKit.NSMenu.alloc().initWithTitle_("Edit")
+        for title, action, key in [
+            ("Cut", "cut:", "x"),
+            ("Copy", "copy:", "c"),
+            ("Paste", "paste:", "v"),
+            ("Select All", "selectAll:", "a"),
+            ("Undo", "undo:", "z"),
+            ("Redo", "redo:", "Z"),
+        ]:
+            item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                title, action, key
+            )
+            editMenu.addItem_(item)
+
+        editMenuItem = AppKit.NSMenuItem.alloc().init()
+        editMenuItem.setTitle_("Edit")
+        editMenuItem.setSubmenu_(editMenu)
+        mainMenu.addItem_(editMenuItem)
+
     def show(self):
         """ウィンドウを表示して前面に持ってくる"""
+        self._ensure_edit_menu()
         self._load_current()
         self._window.makeKeyAndOrderFront_(None)
         AppKit.NSApp.activateIgnoringOtherApps_(True)

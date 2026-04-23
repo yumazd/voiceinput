@@ -35,7 +35,7 @@ OPTIONS = {
         "CFBundleIdentifier": "com.voiceinput.app",
         "CFBundleShortVersionString": "1.0.0",
         "CFBundleVersion": "1",
-        "LSUIElement": True,
+        "LSUIElement": False,
         "NSMicrophoneUsageDescription": "音声入力のためにマイクを使用します",
         "NSAppleEventsUsageDescription": "テキストのペーストのためにアクセシビリティを使用します",
     },

@@ -95,6 +95,17 @@ def _check_accessibility(prompt: bool = False) -> bool:
     return trusted
 
 
+_WHISPER_HALLUCINATIONS = {
+    "ご視聴ありがとうございました",
+    "ご視聴ありがとうございます",
+    "チャンネル登録お願いします",
+    "チャンネル登録よろしくお願いします",
+    "おやすみなさい",
+    "ありがとうございました",
+    "Thanks for watching!",
+    "Thank you for watching!",
+}
+
 _WHISPER_PROMPT_HINT = (
     "Python, JavaScript, TypeScript, React, Next.js, Node.js, API, "
     "Astro, Astro Islands, Vite, MDX, Starlight, "
@@ -141,11 +152,27 @@ class VoiceInputApp(rumps.App):
         _log(f"ホットキー設定: {self.settings.hotkey}")
         self._start_hotkey_listener()
 
+        # Mac起動直後はアクセシビリティやイベント基盤が未準備の場合があるため
+        # ランループ開始後に遅延再登録する
+        self._delayed_reinit_timer = rumps.Timer(self._delayed_reinit, 5)
+        self._delayed_reinit_timer.start()
+
         # ローカルモードならバックグラウンドでモデルをプリロード
         if self.settings.processing_mode == "local":
             threading.Thread(target=self._preload_whisper_model, daemon=True).start()
 
         _log("VoiceInputApp.__init__ 完了")
+
+    # --- 起動時の遅延再初期化 ---
+
+    def _delayed_reinit(self, timer):
+        """Mac起動直後にホットキーモニターが機能しない問題への対処。
+        ランループ開始後に一度だけホットキーリスナーを再登録する。"""
+        timer.stop()
+        _log("遅延再初期化: ホットキーリスナー再登録")
+        self._restart_hotkey_listener()
+        # アクセシビリティ権限を再確認
+        _check_accessibility(prompt=False)
 
     # --- ホットキー処理 (NSEvent ベース) ---
 
@@ -231,12 +258,14 @@ class VoiceInputApp(rumps.App):
     # --- 録音制御 ---
 
     def toggle_recording(self, sender):
+        _log(f"toggle_recording 呼び出し: recording={self.recording}")
         if self.recording:
             self._stop_recording()
         else:
             self._start_recording()
 
     def _start_recording(self):
+        _log("_start_recording 開始")
         self.audio_frames = []
         last_error = None
         for attempt in range(3):
@@ -318,6 +347,10 @@ class VoiceInputApp(rumps.App):
                 _log("faster-whisperで文字起こし開始")
                 raw_text = self._transcribe_local(mp3_buffer)
                 _log(f"ローカル文字起こし結果: {raw_text[:100] if raw_text else '(空)'}")
+                if not raw_text or raw_text in _WHISPER_HALLUCINATIONS:
+                    if raw_text:
+                        _log(f"ハルシネーション検出（無視）: {raw_text}")
+                    raw_text = ""
                 if not raw_text:
                     self._show_notification("エラー", "文字起こしに失敗しました")
                     self._reset_state()
@@ -330,6 +363,10 @@ class VoiceInputApp(rumps.App):
                 _log("Whisperで文字起こし開始")
                 raw_text = self._transcribe(mp3_buffer)
                 _log(f"文字起こし結果: {raw_text[:100] if raw_text else '(空)'}")
+                if not raw_text or raw_text in _WHISPER_HALLUCINATIONS:
+                    if raw_text:
+                        _log(f"ハルシネーション検出（無視）: {raw_text}")
+                    raw_text = ""
                 if not raw_text:
                     self._show_notification("エラー", "文字起こしに失敗しました")
                     self._reset_state()
@@ -476,6 +513,7 @@ class VoiceInputApp(rumps.App):
                 tmp_path,
                 language=self.settings.language,
                 initial_prompt=_WHISPER_PROMPT_HINT,
+                no_speech_threshold=0.5,
             )
             text = "".join(segment.text for segment in segments)
         finally:
@@ -580,6 +618,7 @@ class VoiceInputApp(rumps.App):
         rumps.notification("VoiceInput", title, message)
 
     def _reset_state(self):
+        _log("_reset_state 呼び出し")
         self.title = "🎙️"
         self._update_status("待機中")
 
